@@ -5,7 +5,7 @@
 
 use ark_ec::{
     short_weierstrass::{self as sw},
-    CurveConfig, CurveGroup,
+    AffineRepr, CurveConfig, CurveGroup, VariableBaseMSM,
 };
 use merlin::Transcript;
 
@@ -54,13 +54,13 @@ pub struct MulProof<P: PedersenConfig> {
 
     /// z1: the first part of the response. This is the same as b1 + c * x.
     pub z1: <P as CurveConfig>::ScalarField,
-    /// z2: the second part of the response. This is the same as b2 + c * r_x.    
+    /// z2: the second part of the response. This is the same as b2 + c * r_x.
     pub z2: <P as CurveConfig>::ScalarField,
     /// z3: the third part of the response. This is the same as b3 + c * y.
     pub z3: <P as CurveConfig>::ScalarField,
-    /// z4: the fourth part of the response. This is the same as b4 + c * r_y.    
+    /// z4: the fourth part of the response. This is the same as b4 + c * r_y.
     pub z4: <P as CurveConfig>::ScalarField,
-    /// z4: the fifth part of the response. This is the same as b5 + c * (r_z - r_x * y).    
+    /// z4: the fifth part of the response. This is the same as b5 + c * (r_z - r_x * y).
     pub z5: <P as CurveConfig>::ScalarField,
 }
 
@@ -148,18 +148,23 @@ impl<P: PedersenConfig> MulProof<P> {
         let mut compressed_bytes = Vec::new();
         c1.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"C1", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c2.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"C2", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c3.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"C3", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         alpha.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"alpha", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         beta.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"beta", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         delta.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"delta", &compressed_bytes[..]);
@@ -218,9 +223,16 @@ impl<P: PedersenConfig> MulProof<P> {
         let b5 = <P as CurveConfig>::ScalarField::rand(rng);
 
         // This is Line 1 of Figure 5 of https://eprint.iacr.org/2017/1132.pdf.
-        let alpha = (P::GENERATOR.mul(b1) + P::GENERATOR2.mul(b2)).into_affine();
-        let beta = (P::GENERATOR.mul(b3) + P::GENERATOR2.mul(b4)).into_affine();
-        let delta = (c1.comm.mul(b3) + P::GENERATOR2.mul(b5)).into_affine();
+        let alpha_p = P::msm_generators(&b1, &b2);
+        let beta_p = P::msm_generators(&b3, &b4);
+        let delta_p = {
+            let bases = [c1.comm, P::GENERATOR2];
+            let scalars = [b3, b5];
+            <sw::Projective<P> as VariableBaseMSM>::msm(&bases, &scalars).unwrap()
+        };
+
+        let pts = sw::Projective::<P>::normalize_batch(&[alpha_p, beta_p, delta_p]);
+        let (alpha, beta, delta) = (pts[0], pts[1], pts[2]);
 
         // Add the values to the transcript.
         Self::make_transcript(
@@ -381,19 +393,27 @@ impl<P: PedersenConfig> MulProof<P> {
         c3: &sw::Affine<P>,
         chal: &<P as CurveConfig>::ScalarField,
     ) -> bool {
+        let rhs3 = {
+            let bases = [*c1, P::GENERATOR2];
+            let scalars = [self.z3, self.z5];
+            <sw::Projective<P> as VariableBaseMSM>::msm(&bases, &scalars).unwrap()
+        };
+
+        let rhs1 = P::msm_generators(&self.z1, &self.z2); // z1*G + z2*G2
+        let rhs2 = P::msm_generators(&self.z3, &self.z4); // z3*G + z4*G2
+
         if *chal == P::CM1 {
-            (self.alpha - c1 == P::GENERATOR.mul(self.z1) + P::GENERATOR2.mul(self.z2))
-                && (self.beta - c2 == P::GENERATOR.mul(self.z3) + P::GENERATOR2.mul(self.z4))
-                && (self.delta - c3 == c1.mul(self.z3) + P::GENERATOR2.mul(self.z5))
+            (self.alpha.into_group() - c1 == rhs1)
+                && (self.beta.into_group() - c2 == rhs2)
+                && (self.delta.into_group() - c3 == rhs3)
         } else if *chal == P::CP1 {
-            (self.alpha + c1 == P::GENERATOR.mul(self.z1) + P::GENERATOR2.mul(self.z2))
-                && (self.beta + c2 == P::GENERATOR.mul(self.z3) + P::GENERATOR2.mul(self.z4))
-                && (self.delta + c3 == c1.mul(self.z3) + P::GENERATOR2.mul(self.z5))
+            (self.alpha.into_group() + c1 == rhs1)
+                && (self.beta.into_group() + c2 == rhs2)
+                && (self.delta.into_group() + c3 == rhs3)
         } else {
-            (self.alpha + c1.mul(*chal) == P::GENERATOR.mul(self.z1) + P::GENERATOR2.mul(self.z2))
-                && (self.beta + c2.mul(*chal)
-                    == P::GENERATOR.mul(self.z3) + P::GENERATOR2.mul(self.z4))
-                && (self.delta + c3.mul(*chal) == c1.mul(self.z3) + P::GENERATOR2.mul(self.z5))
+            (self.alpha + c1.mul(*chal) == rhs1)
+                && (self.beta + c2.mul(*chal) == rhs2)
+                && (self.delta + c3.mul(*chal) == rhs3)
         }
     }
 
