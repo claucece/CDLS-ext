@@ -315,12 +315,14 @@ impl<P: PedersenConfig> PointAddProtocol<P> for ECPointAddProof<P> {
         c6: &sw::Affine<P>,
         chal: &<P as CurveConfig>::ScalarField,
     ) -> bool {
-        let z1 = (c3.into_group() - c1).into_affine();
+        let z1_p = c3.into_group() - c1;
+        let z3_p = c4.into_group() - c2;
+        let z4_p = c1.into_group() + c3 + c5;
+        let z5_p = c1.into_group() - c5;
+        let z6_p = c2.into_group() + c6;
+        let zs = sw::Projective::<P>::normalize_batch(&[z1_p, z3_p, z4_p, z5_p, z6_p]);
+        let (z1, z3, z4, z5, z6) = (zs[0], zs[1], zs[2], zs[3], zs[4]);
         let z2 = &self.c7;
-        let z3 = (c4.into_group() - c2).into_affine();
-        let z4 = (c1.into_group() + c3 + c5).into_affine();
-        let z5 = (c1.into_group() - c5).into_affine();
-        let z6 = (c2.into_group() + c6).into_affine();
 
         self.mp1.verify_with_challenge(&z1, z2, &z3, chal)
             && self
@@ -380,21 +382,27 @@ impl<P: PedersenConfig> ECPointAddProof<P> {
         let mut compressed_bytes = Vec::new();
         c1.serialize_compressed(&mut compressed_bytes).unwrap();
         ECPointAdditionTranscript::append_point(transcript, b"C1", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c2.serialize_compressed(&mut compressed_bytes).unwrap();
         ECPointAdditionTranscript::append_point(transcript, b"C2", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c3.serialize_compressed(&mut compressed_bytes).unwrap();
         ECPointAdditionTranscript::append_point(transcript, b"C3", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c4.serialize_compressed(&mut compressed_bytes).unwrap();
         ECPointAdditionTranscript::append_point(transcript, b"C4", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c5.serialize_compressed(&mut compressed_bytes).unwrap();
         ECPointAdditionTranscript::append_point(transcript, b"C5", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c6.serialize_compressed(&mut compressed_bytes).unwrap();
         ECPointAdditionTranscript::append_point(transcript, b"C6", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c7.serialize_compressed(&mut compressed_bytes).unwrap();
         ECPointAdditionTranscript::append_point(transcript, b"C7", &compressed_bytes[..]);
@@ -430,12 +438,14 @@ impl<P: PedersenConfig> ECPointAddProof<P> {
         op: &OP,
         nzp: &NZP,
     ) {
-        let z1 = (c3.into_group() - c1).into_affine();
-        let z2 = &c7;
-        let z3 = (c4.into_group() - c2).into_affine();
-        let z4 = (c1.into_group() + c3 + c5).into_affine();
-        let z5 = (c1.into_group() - c5).into_affine();
-        let z6 = (c2.into_group() + c6).into_affine();
+        let z1_p = c3.into_group() - c1;
+        let z3_p = c4.into_group() - c2;
+        let z4_p = c1.into_group() + c3 + c5;
+        let z5_p = c1.into_group() - c5;
+        let z6_p = c2.into_group() + c6;
+        let zs = sw::Projective::<P>::normalize_batch(&[z1_p, z3_p, z4_p, z5_p, z6_p]);
+        let (z1, z3, z4, z5, z6) = (zs[0], zs[1], zs[2], zs[3], zs[4]);
+        let z2 = c7;
 
         // Just instantiate each sub-portion together.
         mp1.add_to_transcript(transcript, &z1, z2, &z3);

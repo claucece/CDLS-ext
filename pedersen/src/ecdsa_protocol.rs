@@ -3,7 +3,7 @@
 
 use ark_ec::{
     short_weierstrass::{self as sw, SWCurveConfig},
-    CurveConfig, CurveGroup,
+    AffineRepr, CurveConfig, CurveGroup,
 };
 use merlin::Transcript;
 
@@ -238,7 +238,7 @@ impl<P: PedersenConfig, PT: Collective<P>> ECDSASigProof<P, PT> {
     /// * `r` - the R value from the ECDSA signature verification equation.
     /// * `r_x` - the truncated `x` co-ordinate of `R`.
     /// * `s` - the other part of the ECDSA signature.
-    /// * `q` - the public key.    
+    /// * `q` - the public key.
     pub fn create<T: RngCore + CryptoRng>(
         transcript: &mut Transcript,
         rng: &mut T,
@@ -322,16 +322,12 @@ impl<P: PedersenConfig, PT: Collective<P>> ECDSASigProof<P, PT> {
         r: &sw::Affine<<P as PedersenConfig>::OCurve>,
         t: &<<P as PedersenConfig>::OCurve as CurveConfig>::ScalarField,
     ) -> bool {
-        // We just rebuild each of the commitments and then check if they line up.
         let (_, trm1g) = Self::make_trm1g_and_r_inv(t, &P::from_ob_to_os(r.x));
-        // N.B This whole thing can be done faster by either a) using MSM or b)
-        // by just sending the commitments as g^{x}. This is the same as implicitly
-        // setting the randomness value to 0.
-        let gx = (P::GENERATOR.mul(P::from_ob_to_sf(trm1g.x)) + P::GENERATOR2.mul(self.cs_xr))
-            .into_affine();
-        let gy = (P::GENERATOR.mul(P::from_ob_to_sf(trm1g.y)) + P::GENERATOR2.mul(self.cs_yr))
-            .into_affine();
-        gx == self.cs_x && gy == self.cs_y
+
+        let gx = P::msm_generators(&P::from_ob_to_sf(trm1g.x), &self.cs_xr); // Projective
+        let gy = P::msm_generators(&P::from_ob_to_sf(trm1g.y), &self.cs_yr); // Projective
+
+        gx == self.cs_x.into_group() && gy == self.cs_y.into_group()
     }
 
     /// verify. This function returns true if the proof held by `self` is a valid proof

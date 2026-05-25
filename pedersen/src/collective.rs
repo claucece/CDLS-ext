@@ -12,5 +12,5 @@ pub trait Collective<P: PedersenConfig> {
     type PointAdd: PointAddProtocol<P>;
 
     /// ScalarMul. This protocol abstracts away a scalar multiplication proof.
-    type ScalarMul: ScalarMulProtocol<P>;
+    type ScalarMul: ScalarMulProtocol<P> + Sync;
 }

@@ -297,7 +297,7 @@ impl<P: PedersenConfig> ScalarMulProtocol<P> for ECScalarMulProof<P> {
 
     /// create_proof_with_challenge_byte. This function returns a proof that s = λp for some publicly known point `P`.
     /// Note that `s` and `p` are both members of P::OCurve, and not the
-    /// associated T Curve. Notably, this function uses a pre-supplied challenge (`chal`) as the challenge value.    
+    /// associated T Curve. Notably, this function uses a pre-supplied challenge (`chal`) as the challenge value.
     /// # Arguments
     /// * `s` - the secret, target point.
     /// * `lambda` - the scalar multiple that is used.
@@ -323,9 +323,9 @@ impl<P: PedersenConfig> ScalarMulProtocol<P> for ECScalarMulProof<P> {
     /// verify_proof. This function verifies the proof held in `self`, returning true if the proof is valid (and false otherwise).
     /// Notably, this function builds the challenge from the bytes supplied in `chal_buf`.
     /// # Arguments
-    /// * `self` - the proof object.    
+    /// * `self` - the proof object.
     /// * `p` - the publicly known point.
-    /// * `chal_buf` - the buffer containing the challenge bytes.        
+    /// * `chal_buf` - the buffer containing the challenge bytes.
     fn verify_proof(
         &self,
         p: &sw::Affine<<P as PedersenConfig>::OCurve>,
@@ -386,7 +386,7 @@ impl<P: PedersenConfig> ECScalarMulProof<P> {
 
     /// create_proof_with_challenge. This function returns a proof that s = λp for some publicly known point `P`.
     /// Note that `s` and `p` are both members of P::OCurve, and not the
-    /// associated T Curve. Notably, this function uses a pre-supplied challenge (`chal`) as the challenge value.    
+    /// associated T Curve. Notably, this function uses a pre-supplied challenge (`chal`) as the challenge value.
     /// # Arguments
     /// * `s` - the secret, target point.
     /// * `lambda` - the scalar multiple that is used.
@@ -491,24 +491,31 @@ impl<P: PedersenConfig> ECScalarMulProof<P> {
 
         c1.serialize_compressed(&mut compressed_bytes).unwrap();
         ECScalarMulTranscript::append_point(transcript, b"C1", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c2.serialize_compressed(&mut compressed_bytes).unwrap();
         ECScalarMulTranscript::append_point(transcript, b"C2", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c3.serialize_compressed(&mut compressed_bytes).unwrap();
         ECScalarMulTranscript::append_point(transcript, b"C3", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c4.serialize_compressed(&mut compressed_bytes).unwrap();
         ECScalarMulTranscript::append_point(transcript, b"C4", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c5.serialize_compressed(&mut compressed_bytes).unwrap();
         ECScalarMulTranscript::append_point(transcript, b"C5", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c6.serialize_compressed(&mut compressed_bytes).unwrap();
         ECScalarMulTranscript::append_point(transcript, b"C6", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c7.serialize_compressed(&mut compressed_bytes).unwrap();
         ECScalarMulTranscript::append_point(transcript, b"C7", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         c8.serialize_compressed(&mut compressed_bytes).unwrap();
         ECScalarMulTranscript::append_point(transcript, b"C8", &compressed_bytes[..]);

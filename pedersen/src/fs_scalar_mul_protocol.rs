@@ -19,7 +19,7 @@ use std::marker::PhantomData;
 /// FSECScalarMulProof. This struct acts as a container for the Fiat-Shamir scalar multiplication proof.
 /// Essentially, this struct can be used to create new proofs (via ```create```), and verify existing proofs (via ```verify```).
 pub struct FSECScalarMulProof<P: PedersenConfig, PT: ScalarMulProtocol<P>> {
-    /// proofs: the sub-proofs.    
+    /// proofs: the sub-proofs.
     proofs: Vec<PT>,
     _p: PhantomData<P>,
 }
@@ -29,7 +29,7 @@ pub struct FSECScalarMulProofIntermediate<P: PedersenConfig, PT: ScalarMulProtoc
     _p: PhantomData<P>,
 }
 
-impl<P: PedersenConfig, PT: ScalarMulProtocol<P>> FSECScalarMulProof<P, PT> {
+impl<P: PedersenConfig, PT: ScalarMulProtocol<P> + Sync> FSECScalarMulProof<P, PT> {
     /// create_intermediate. This function returns a set of intermediate values for
     /// s = λp for some publicly known point `P`. Note that `s` and `p` are both members of P::OCurve, and not the
     /// associated T Curve.
@@ -188,7 +188,7 @@ impl<P: PedersenConfig, PT: ScalarMulProtocol<P>> FSECScalarMulProof<P, PT> {
     /// to the `transcript`. This includes all sub-proof objects.
     /// # Arguments
     /// * `self` - the proof object.
-    /// * `transcript` - the transcript object.    
+    /// * `transcript` - the transcript object.
     pub fn add_to_transcript(
         &self,
         transcript: &mut Transcript,
@@ -254,22 +254,22 @@ impl<P: PedersenConfig, PT: ScalarMulProtocol<P>> FSECScalarMulProof<P, PT> {
         c2: &sw::Affine<P>,
         c3: &sw::Affine<P>,
         chal_buf: &[u8],
-    ) -> bool {
-        // And now just check they all go through.
-        let mut worked: bool = true;
+    ) -> bool
+    where
+        PT: Sync,
+    {
+        use rayon::prelude::*;
 
-        for (i, c) in chal_buf.iter().enumerate() {
-            // Take the current challenge byte.
-            let mut byte = *c;
+        let stride = 8 / PT::SHIFT_BY;
 
-            for j in 0..PT::SUB_ITER {
-                worked &= self.proofs[i * (8 / PT::SHIFT_BY) + j]
-                    .verify_with_challenge_byte(p, byte, c1, c2, c3);
-                byte >>= PT::SHIFT_BY;
-            }
-        }
-
-        worked
+        // Flatten (i, j): a single round index, with each round's challenge bit
+        (0..chal_buf.len()).into_par_iter().all(|i| {
+            let c = chal_buf[i];
+            (0..PT::SUB_ITER).all(|j| {
+                let byte = c >> (j * PT::SHIFT_BY);
+                self.proofs[i * stride + j].verify_with_challenge_byte(p, byte, c1, c2, c3)
+            })
+        })
     }
 
     /// serialized_size. Returns the number of bytes needed to represent this proof object once serialised.
