@@ -8,7 +8,7 @@
 
 use ark_ec::{
     short_weierstrass::{self as sw},
-    CurveConfig, CurveGroup,
+    CurveConfig, CurveGroup, VariableBaseMSM,
 };
 use merlin::Transcript;
 
@@ -71,7 +71,7 @@ pub trait OpeningProofTranscriptable {
     /// # Arguments
     /// * `self` - the proof object.
     /// * `transcript` - the transcript which is modified.
-    /// * `c1` - the commitment that is being added to the transcript.    
+    /// * `c1` - the commitment that is being added to the transcript.
     fn add_to_transcript(&self, transcript: &mut Transcript, c1: &Self::Affine);
 }
 
@@ -103,6 +103,8 @@ impl<P: PedersenConfig> OpeningProof<P> {
         let mut compressed_bytes = Vec::new();
         c1.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"C1", &compressed_bytes[..]);
+
+        compressed_bytes.clear();
 
         alpha_p.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"alpha", &compressed_bytes[..]);
@@ -144,7 +146,9 @@ impl<P: PedersenConfig> OpeningProof<P> {
     ) -> OpeningProofIntermediate<P> {
         let t1 = <P as CurveConfig>::ScalarField::rand(rng);
         let t2 = <P as CurveConfig>::ScalarField::rand(rng);
-        let alpha = (P::GENERATOR.mul(t1) + P::GENERATOR2.mul(t2)).into_affine();
+
+        let alpha = P::msm_generators(&t1, &t2).into_affine();
+
         Self::make_transcript(transcript, &c1.comm, &alpha);
         OpeningProofIntermediate { t1, t2, alpha }
     }
@@ -271,8 +275,7 @@ impl<P: PedersenConfig> OpeningProof<P> {
         } else {
             c1.mul(*chal) + self.alpha
         };
-
-        P::GENERATOR.mul(self.z1) + P::GENERATOR2.mul(self.z2) == rhs
+        P::msm_generators(&self.z1, &self.z2) == rhs
     }
 
     /// serialized_size. Returns the number of bytes needed to represent this proof object once serialised.

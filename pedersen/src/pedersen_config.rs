@@ -27,7 +27,7 @@ pub trait PedersenConfig: SWCurveConfig {
     /// from_oc. This function takes an `x` in OCurve's ScalarField and converts it
     /// into an element of the ScalarField of the current curve.
     /// * `x` - the element ∈ OCurve's ScalarField.
-    /// Returns `x` as an element of Self::ScalarField.    
+    /// Returns `x` as an element of Self::ScalarField.
     fn from_oc(
         x: <Self::OCurve as CurveConfig>::ScalarField,
     ) -> <Self as CurveConfig>::ScalarField {
@@ -107,6 +107,13 @@ pub trait PedersenConfig: SWCurveConfig {
 
     /// CM1. This constant is the representation of "-1" in the ScalarField of `Self`.
     const CM1: Self::ScalarField;
+
+    /// z1*GENERATOR + z2*GENERATOR2, using a cached fixed-base window table
+    /// for this curve's two generators.
+    fn msm_generators(
+        z1: &<Self as CurveConfig>::ScalarField,
+        z2: &<Self as CurveConfig>::ScalarField,
+    ) -> sw::Projective<Self>;
 
     /// create_commitments_to_coords. This function accepts a series of affine points (from the underyling OCurve)
     /// and creates commitments to each co-ordinate of each point, returning the results as a tuple.

@@ -3,7 +3,7 @@
 
 use ark_ec::{
     short_weierstrass::{self as sw},
-    CurveConfig, CurveGroup,
+    AffineRepr, CurveConfig, CurveGroup, VariableBaseMSM,
 };
 use merlin::Transcript;
 
@@ -131,12 +131,15 @@ impl<P: PedersenConfig> NonZeroProof<P> {
         let mut compressed_bytes = Vec::new();
         c1.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"C1", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         t1.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"t1", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         t2.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"t2", &compressed_bytes[..]);
+        compressed_bytes.clear();
 
         t3.serialize_compressed(&mut compressed_bytes).unwrap();
         transcript.append_point(b"t3", &compressed_bytes[..]);
@@ -182,9 +185,15 @@ impl<P: PedersenConfig> NonZeroProof<P> {
         let a3 = <P as CurveConfig>::ScalarField::rand(rng);
         let a4 = <P as CurveConfig>::ScalarField::rand(rng);
 
-        let t1 = ((P::GENERATOR.mul(a1)).mul(x)).into_affine();
-        let t2 = (c1.comm.mul(a2) + P::GENERATOR2.mul(a3)).into_affine();
-        let t3 = (P::GENERATOR.mul(a4)).into_affine();
+        let t1_p = (P::GENERATOR.mul(a1)).mul(x);
+        let t2_p = {
+            let b = [c1.comm, P::GENERATOR2];
+            let s = [a2, a3];
+            <sw::Projective<P> as VariableBaseMSM>::msm(&b, &s).unwrap()
+        };
+        let t3_p = P::GENERATOR.mul(a4);
+        let normalized = sw::Projective::<P>::normalize_batch(&[t1_p, t2_p, t3_p]);
+        let (t1, t2, t3) = (normalized[0], normalized[1], normalized[2]);
 
         // Add the values to the transcript.
         Self::make_transcript(transcript, &c1.comm, &t1, &t2, &t3);
@@ -302,18 +311,27 @@ impl<P: PedersenConfig> NonZeroProof<P> {
         c1: &sw::Affine<P>,
         chal: &<P as CurveConfig>::ScalarField,
     ) -> bool {
+        // s1*C1 + s2*G2: same in every branch, so compute once.
+        let rhs2 = {
+            let bases = [*c1, P::GENERATOR2];
+            let scalars = [self.s1, self.s2];
+            <sw::Projective<P> as VariableBaseMSM>::msm(&bases, &scalars).unwrap()
+        };
+
+        let g_s3 = P::GENERATOR.mul(self.s3);
+
         if *chal == P::CM1 {
             (self.t1 != Affine::identity())
                 && (self.t3 - self.t1 == P::GENERATOR.mul(self.s3))
-                && (self.t2 - self.t1 == c1.mul(self.s1) + P::GENERATOR2.mul(self.s2))
+                && (self.t2.into_group() - self.t1 == rhs2)
         } else if *chal == P::CP1 {
             (self.t1 != Affine::identity())
                 && (self.t3 + self.t1 == P::GENERATOR.mul(self.s3))
-                && (self.t2 + self.t1 == c1.mul(self.s1) + P::GENERATOR2.mul(self.s2))
+                && (self.t2.into_group() + self.t1 == rhs2)
         } else {
             (self.t1 != Affine::identity())
                 && (self.t3 + (self.t1.mul(*chal)) == P::GENERATOR.mul(self.s3))
-                && (self.t2 + (self.t1.mul(*chal)) == c1.mul(self.s1) + P::GENERATOR2.mul(self.s2))
+                && (self.t2 + (self.t1.mul(*chal)) == rhs2)
         }
     }
 

@@ -142,6 +142,20 @@ macro_rules! __derive_conversion {
 
             const CM1: Self::ScalarField = StrToFr!("-1");
             const CP1: Self::ScalarField = StrToFr!("1");
+
+            fn msm_generators(
+                z1: &<$config as CurveConfig>::ScalarField,
+                z2: &<$config as CurveConfig>::ScalarField,
+            ) -> sw::Projective<$config> {
+                use ark_ec::VariableBaseMSM;
+                let bases = [
+                    <$config as SWCurveConfig>::GENERATOR,
+                    <$config as PedersenConfig>::GENERATOR2,
+                ];
+                let scalars = [*z1, *z2];
+                <sw::Projective<$config> as VariableBaseMSM>::msm(&bases, &scalars)
+                    .expect("msm: bases.len() == scalars.len()")
+            }
         }
     };
 }
