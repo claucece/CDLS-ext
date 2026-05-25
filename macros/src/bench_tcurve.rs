@@ -307,126 +307,7 @@ macro_rules! bench_tcurve_point_add_verifier_time {
     };
 }
 
-#[macro_export]
-macro_rules! bench_tcurve_zk_attest_point_add_prover_time {
-    ($config: ty, $bench_name: ident, $curve_name: tt, $OtherProjectiveType: ty) => {
-        pub fn $bench_name(c: &mut Criterion) {
-            type PC = PedersenComm<$config>;
-            type SF = <$config as CurveConfig>::ScalarField;
-            type OSF = <<$config as PedersenConfig>::OCurve as CurveConfig>::ScalarField;
-            let label = b"PedersenZKAttestECPointAdd";
-
-            let a = <$OtherProjectiveType>::rand(&mut OsRng).into_affine();
-            let mut b = <$OtherProjectiveType>::rand(&mut OsRng).into_affine();
-            loop {
-                if b != a {
-                    break;
-                }
-                b = <$OtherProjectiveType>::rand(&mut OsRng).into_affine();
-            }
-
-            // Note: this needs to be forced into affine too, or the underlying
-            // proof system breaks (this seems to be an ark_ff thing).
-            let t = (a + b).into_affine();
-            let (cax, cay, cbx, cby, ctx, cty) =
-                <$config as PedersenConfig>::create_commitments_to_coords(a, b, t, &mut OsRng);
-
-            c.bench_function(
-                concat!($curve_name, " zk attest point add prover time"),
-                |bf| {
-                    bf.iter(|| {
-                        let mut transcript = Transcript::new(label);
-                        ZKEPAP::<$config>::create_with_existing_commitments(
-                            &mut transcript,
-                            &mut OsRng,
-                            a,
-                            b,
-                            t,
-                            &cax,
-                            &cay,
-                            &cbx,
-                            &cby,
-                            &ctx,
-                            &cty,
-                        );
-                    });
-                },
-            );
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! bench_tcurve_zk_attest_point_add_verifier_time {
-    ($config: ty, $bench_name: ident, $curve_name: tt, $OtherProjectiveType: ty) => {
-        pub fn $bench_name(c: &mut Criterion) {
-            type PC = PedersenComm<$config>;
-            type SF = <$config as CurveConfig>::ScalarField;
-            type OSF = <<$config as PedersenConfig>::OCurve as CurveConfig>::ScalarField;
-            let label = b"PedersenZKAttestECPointAdd";
-
-            let a = <$OtherProjectiveType>::rand(&mut OsRng).into_affine();
-            let mut b = <$OtherProjectiveType>::rand(&mut OsRng).into_affine();
-            loop {
-                if b != a {
-                    break;
-                }
-                b = <$OtherProjectiveType>::rand(&mut OsRng).into_affine();
-            }
-
-            // Note: this needs to be forced into affine too, or the underlying
-            // proof system breaks (this seems to be an ark_ff thing).
-            let t = (a + b).into_affine();
-            let (cax, cay, cbx, cby, ctx, cty) =
-                <$config as PedersenConfig>::create_commitments_to_coords(a, b, t, &mut OsRng);
-            let mut transcript = Transcript::new(label);
-            let proof: ZKEPAP<Config> = ZKEPAP::create_with_existing_commitments(
-                &mut transcript,
-                &mut OsRng,
-                a,
-                b,
-                t,
-                &cax,
-                &cay,
-                &cbx,
-                &cby,
-                &ctx,
-                &cty,
-            );
-            let comm_size = cax.comm.compressed_size()
-                + cbx.comm.compressed_size()
-                + ctx.comm.compressed_size()
-                + cay.comm.compressed_size()
-                + cby.comm.compressed_size()
-                + cty.comm.compressed_size();
-            println!(
-                "ZKAttest point add proof size for {}:{}",
-                $curve_name,
-                proof.serialized_size() + comm_size
-            );
-
-            let mut transcript_v = Transcript::new(label);
-            c.bench_function(
-                concat!($curve_name, " zk attest point add verifier time"),
-                |bf| {
-                    bf.iter(|| {
-                        let mut transcript_v = Transcript::new(label);
-                        proof.verify(
-                            &mut transcript_v,
-                            &cax.comm,
-                            &cay.comm,
-                            &cbx.comm,
-                            &cby.comm,
-                            &ctx.comm,
-                            &cty.comm,
-                        );
-                    });
-                },
-            );
-        }
-    };
-}
-
+// CDLS
 #[macro_export]
 macro_rules! bench_tcurve_scalar_mul_prover_time {
     ($config: ty, $bench_name: ident, $curve_name: tt, $OtherProjectiveType: ty) => {
@@ -619,217 +500,6 @@ macro_rules! bench_tcurve_fs_scalar_mul_verifier_time {
 
             c.bench_function(
                 concat!($curve_name, " CDLS fiat-shamir scalar mul verifier time"),
-                |b| {
-                    b.iter(|| {
-                        let mut transcript_v = Transcript::new(label);
-                        proof.verify(&mut transcript_v, &OGENERATOR, &c1, &c2.comm, &c3.comm);
-                    });
-                },
-            );
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! bench_tcurve_zk_attest_scalar_mul_prover_time {
-    ($config: ty, $bench_name: ident, $curve_name: tt, $OtherProjectiveType: ty) => {
-        pub fn $bench_name(c: &mut Criterion) {
-            type PC = PedersenComm<$config>;
-            type SF = <$config as CurveConfig>::ScalarField;
-            type OSF = <<$config as PedersenConfig>::OCurve as CurveConfig>::ScalarField;
-            const OGENERATOR: sw::Affine<<$config as PedersenConfig>::OCurve> =
-                <<$config as PedersenConfig>::OCurve as SWCurveConfig>::GENERATOR;
-
-            let label = b"PedersenZkAttestScalarMult";
-            let lambda = OSF::rand(&mut OsRng);
-            let s = (OGENERATOR.mul(lambda)).into_affine();
-
-            let (c1, r1) = <$config as PedersenConfig>::create_commit_other(&lambda, &mut OsRng);
-            let c2 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.x), &mut OsRng);
-            let c3 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.y), &mut OsRng);
-
-            c.bench_function(
-                concat!($curve_name, " zk attest scalar mul prover time"),
-                |b| {
-                    b.iter(|| {
-                        let mut transcript = Transcript::new(label);
-                        let inter =
-                            ZKECSMP::<$config>::create_intermediates_with_existing_commitments(
-                                &mut transcript,
-                                &mut OsRng,
-                                &s,
-                                &lambda,
-                                &OGENERATOR,
-                                &c1,
-                                &r1,
-                                &c2,
-                                &c3,
-                            );
-                        let chal = ZKECSMP::<$config>::challenge_scalar(&mut transcript);
-                        ZKECSMP::<$config>::create_proof(
-                            &s,
-                            &lambda,
-                            &OGENERATOR,
-                            &inter,
-                            &chal,
-                            &c1,
-                            &r1,
-                            &c2,
-                            &c3,
-                        )
-                    });
-                },
-            );
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! bench_tcurve_zk_attest_scalar_mul_verifier_time {
-    ($config: ty, $bench_name: ident, $curve_name: tt, $OtherProjectiveType: ty) => {
-        pub fn $bench_name(c: &mut Criterion) {
-            type PC = PedersenComm<$config>;
-            type SF = <$config as CurveConfig>::ScalarField;
-            type OSF = <<$config as PedersenConfig>::OCurve as CurveConfig>::ScalarField;
-            const OGENERATOR: sw::Affine<<$config as PedersenConfig>::OCurve> =
-                <<$config as PedersenConfig>::OCurve as SWCurveConfig>::GENERATOR;
-
-            let label = b"PedersenZKAttestScalarMult";
-            let lambda = OSF::rand(&mut OsRng);
-            let s = (OGENERATOR.mul(lambda)).into_affine();
-            let (c1, r1) = <$config as PedersenConfig>::create_commit_other(&lambda, &mut OsRng);
-            let c2 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.x), &mut OsRng);
-            let c3 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.y), &mut OsRng);
-
-            let mut transcript = Transcript::new(label);
-            let inter = ZKECSMP::<$config>::create_intermediates_with_existing_commitments(
-                &mut transcript,
-                &mut OsRng,
-                &s,
-                &lambda,
-                &OGENERATOR,
-                &c1,
-                &r1,
-                &c2,
-                &c3,
-            );
-
-            let chal = ZKECSMP::<$config>::challenge_scalar(&mut transcript);
-            let proof = ZKECSMP::<$config>::create_proof(
-                &s,
-                &lambda,
-                &OGENERATOR,
-                &inter,
-                &chal,
-                &c1,
-                &r1,
-                &c2,
-                &c3,
-            );
-
-            let comm_size =
-                c1.compressed_size() + c2.comm.compressed_size() + c3.comm.compressed_size();
-            println!(
-                "ZKAttest scalar mul proof size for {}:{}",
-                $curve_name,
-                proof.serialized_size()
-            );
-
-            c.bench_function(
-                concat!($curve_name, " zk attest scalar mul verifier time"),
-                |b| {
-                    b.iter(|| {
-                        proof.verify_proof(&OGENERATOR, &chal, &c1, &c2.comm, &c3.comm);
-                    });
-                },
-            );
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! bench_tcurve_fs_zk_attest_scalar_mul_prover_time {
-    ($config: ty, $bench_name: ident, $curve_name: tt, $OtherProjectiveType: ty) => {
-        pub fn $bench_name(c: &mut Criterion) {
-            type PC = PedersenComm<$config>;
-            type SF = <$config as CurveConfig>::ScalarField;
-            type OSF = <<$config as PedersenConfig>::OCurve as CurveConfig>::ScalarField;
-            const OGENERATOR: sw::Affine<<$config as PedersenConfig>::OCurve> =
-                <<$config as PedersenConfig>::OCurve as SWCurveConfig>::GENERATOR;
-
-            let label = b"PedersenFSZkAttestScalarMult";
-            let lambda = OSF::rand(&mut OsRng);
-            let s = (OGENERATOR.mul(lambda)).into_affine();
-            let (c1, r1) = <$config as PedersenConfig>::create_commit_other(&lambda, &mut OsRng);
-            let c2 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.x), &mut OsRng);
-            let c3 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.y), &mut OsRng);
-
-            c.bench_function(
-                concat!($curve_name, " fiat-shamir zk attest scalar mul prover time"),
-                |b| {
-                    b.iter(|| {
-                        let mut transcript = Transcript::new(label);
-                        FSECSMP::<$config, ZKECSMP<Config>>::create(
-                            &mut transcript,
-                            &mut OsRng,
-                            &s,
-                            &lambda,
-                            &OGENERATOR,
-                            &c1,
-                            &r1,
-                            &c2,
-                            &c3,
-                        );
-                    });
-                },
-            );
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! bench_tcurve_fs_zk_attest_scalar_mul_verifier_time {
-    ($config: ty, $bench_name: ident, $curve_name: tt, $OtherProjectiveType: ty) => {
-        pub fn $bench_name(c: &mut Criterion) {
-            type PC = PedersenComm<$config>;
-            type SF = <$config as CurveConfig>::ScalarField;
-            type OSF = <<$config as PedersenConfig>::OCurve as CurveConfig>::ScalarField;
-            const OGENERATOR: sw::Affine<<$config as PedersenConfig>::OCurve> =
-                <<$config as PedersenConfig>::OCurve as SWCurveConfig>::GENERATOR;
-
-            let label = b"PedersenFSZkAttestScalarMult";
-            let lambda = OSF::rand(&mut OsRng);
-            let s = (OGENERATOR.mul(lambda)).into_affine();
-            let (c1, r1) = <$config as PedersenConfig>::create_commit_other(&lambda, &mut OsRng);
-            let c2 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.x), &mut OsRng);
-            let c3 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.y), &mut OsRng);
-
-            let mut transcript = Transcript::new(label);
-            let proof = FSECSMP::<$config, ZKECSMP<$config>>::create(
-                &mut transcript,
-                &mut OsRng,
-                &s,
-                &lambda,
-                &OGENERATOR,
-                &c1,
-                &r1,
-                &c2,
-                &c3,
-            );
-
-            let comm_size =
-                c1.compressed_size() + c2.comm.compressed_size() + c3.comm.compressed_size();
-            println!(
-                "ZKAttest fs scalar mul proof size for {}:{}",
-                $curve_name,
-                proof.serialized_size()
-            );
-
-            c.bench_function(
-                concat!(
-                    $curve_name,
-                    " fiat-shamir zk attest scalar mul verifier time"
-                ),
                 |b| {
                     b.iter(|| {
                         let mut transcript_v = Transcript::new(label);
@@ -1071,174 +741,6 @@ macro_rules! bench_tcurve_ecdsa_verifier_time {
 }
 
 #[macro_export]
-macro_rules! bench_zk_attest_fs_scalar_mul_prover_time_vary {
-    ($config: ty, $bench_name: ident, $curve_name: tt, $OtherProjectiveType: ty) => {
-        pub fn $bench_name(c: &mut Criterion) {
-            type PC = PedersenComm<$config>;
-            type SF = <$config as CurveConfig>::ScalarField;
-            type OSF = <<$config as PedersenConfig>::OCurve as CurveConfig>::ScalarField;
-            const OGENERATOR: sw::Affine<<$config as PedersenConfig>::OCurve> =
-                <<$config as PedersenConfig>::OCurve as SWCurveConfig>::GENERATOR;
-
-            let label = b"PedersenZkAttestScalarMult";
-            let lambda = OSF::rand(&mut OsRng);
-            let s = (OGENERATOR.mul(lambda)).into_affine();
-
-            let (c1, r1) = <$config as PedersenConfig>::create_commit_other(&lambda, &mut OsRng);
-            let c2 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.x), &mut OsRng);
-            let c3 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.y), &mut OsRng);
-
-            // We have to instantiate a group here for this.
-            let mut group =
-                c.benchmark_group(concat!($curve_name, " zk attest prover time size varying"));
-            group.sample_size(10);
-
-            // We explicitly make the size of the proof.
-            for size in 0..<$config as PedersenConfig>::SECPARAM {
-                let mut challenge = [0u8; 2 * 64];
-                // We set the odd element bits for each piece of `size`.
-                let mut tmp_size = size;
-                for i in 0..2 * 64 {
-                    if tmp_size == 0 {
-                        break;
-                    }
-                    for j in [0, 2, 4, 6] {
-                        if tmp_size == 0 {
-                            break;
-                        }
-                        challenge[i] |= (1 << j);
-                        tmp_size -= 1;
-                    }
-                }
-
-                group.bench_with_input(format!("HW {}", size), &size, |b, &t| {
-                    b.iter(|| {
-                        let mut transcript = Transcript::new(label);
-                        let inter = FSECSMP::<$config, ZKECSMP<Config>>::create_intermediate(
-                            &mut transcript,
-                            &mut OsRng,
-                            &s,
-                            &lambda,
-                            &OGENERATOR,
-                            &c1,
-                            &r1,
-                            &c2,
-                            &c3,
-                        );
-                        FSECSMP::<$config, ZKECSMP<Config>>::create_proof(
-                            &s,
-                            &lambda,
-                            &OGENERATOR,
-                            &inter,
-                            &c1,
-                            &r1,
-                            &c2,
-                            &c3,
-                            &challenge[0..(ZKECSMP::<$config>::SHIFT_BY
-                                * <$config as PedersenConfig>::SECPARAM
-                                / 8)],
-                        );
-                    });
-                });
-            }
-
-            group.finish();
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! bench_zk_attest_fs_scalar_mul_verifier_time_vary {
-    ($config: ty, $bench_name: ident, $curve_name: tt, $OtherProjectiveType: ty) => {
-        pub fn $bench_name(c: &mut Criterion) {
-            type PC = PedersenComm<$config>;
-            type SF = <$config as CurveConfig>::ScalarField;
-            type OSF = <<$config as PedersenConfig>::OCurve as CurveConfig>::ScalarField;
-            const OGENERATOR: sw::Affine<<$config as PedersenConfig>::OCurve> =
-                <<$config as PedersenConfig>::OCurve as SWCurveConfig>::GENERATOR;
-
-            let label = b"PedersenZkAttestScalarMult";
-            let lambda = OSF::rand(&mut OsRng);
-            let s = (OGENERATOR.mul(lambda)).into_affine();
-
-            let (c1, r1) = <$config as PedersenConfig>::create_commit_other(&lambda, &mut OsRng);
-            let c2 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.x), &mut OsRng);
-            let c3 = PC::new(<$config as PedersenConfig>::from_ob_to_sf(s.y), &mut OsRng);
-
-            // We have to instantiate a group here for this.
-            let mut group = c.benchmark_group(concat!(
-                $curve_name,
-                " zk attest verifier time size varying"
-            ));
-            group.sample_size(10);
-
-            let comm_size =
-                c1.compressed_size() + c2.comm.compressed_size() + c3.comm.compressed_size();
-
-            // We explicitly make the size of the proof.
-            for size in 0..<$config as PedersenConfig>::SECPARAM {
-                let mut challenge = [0u8; 64];
-                // We set the odd element bits for each piece of `size`.
-                let mut tmp_size = size;
-                for i in 0..64 {
-                    if tmp_size == 0 {
-                        break;
-                    }
-                    for j in [0, 2, 4, 6] {
-                        if tmp_size == 0 {
-                            break;
-                        }
-                        challenge[i] |= (1 << j);
-                        tmp_size -= 1;
-                    }
-                }
-
-                let mut transcript = Transcript::new(label);
-                let inter = FSECSMP::<$config, ZKECSMP<Config>>::create_intermediate(
-                    &mut transcript,
-                    &mut OsRng,
-                    &s,
-                    &lambda,
-                    &OGENERATOR,
-                    &c1,
-                    &r1,
-                    &c2,
-                    &c3,
-                );
-                let proof = FSECSMP::<$config, ZKECSMP<Config>>::create_proof(
-                    &s,
-                    &lambda,
-                    &OGENERATOR,
-                    &inter,
-                    &c1,
-                    &r1,
-                    &c2,
-                    &c3,
-                    &challenge[0..(ZKECSMP::<$config>::SHIFT_BY
-                        * <$config as PedersenConfig>::SECPARAM
-                        / 8)],
-                );
-                println!("HW {}, size {}", size, proof.serialized_size() + comm_size);
-                group.bench_with_input(format!("HW {}", size), &size, |b, &t| {
-                    b.iter(|| {
-                        proof.verify_proof_with_challenge(
-                            &OGENERATOR,
-                            &c1,
-                            &c2.comm,
-                            &c3.comm,
-                            &challenge[0..(ZKECSMP::<$config>::SHIFT_BY
-                                * <$config as PedersenConfig>::SECPARAM
-                                / 8)],
-                        );
-                    });
-                });
-            }
-            group.finish();
-        }
-    };
-}
-
-#[macro_export]
 macro_rules! bench_tcurve_import_everything {
     () => {
         use ark_ec::{
@@ -1270,14 +772,6 @@ macro_rules! bench_tcurve_import_everything {
                 ECScalarMulProof as ECSMP, ECScalarMulProofIntermediate as ECSMPI,
             },
             transcript::{ECScalarMulTranscript, ZKAttestECScalarMulTranscript},
-            zk_attest_collective::ZKAttestCollective,
-            zk_attest_point_add_protocol::{
-                ZKAttestPointAddProof as ZKEPAP, ZKAttestPointAddProofIntermediate as ZKEPAPI,
-            },
-            zk_attest_scalar_mul_protocol::{
-                ZKAttestECScalarMulProof as ZKECSMP,
-                ZKAttestECScalarMulProofIntermediate as ZKECSMPI,
-            },
         };
         use rand_core::OsRng;
         use sha2::{Digest, Sha512};
@@ -1351,19 +845,6 @@ macro_rules! bench_tcurve_make_all {
             $OtherProjectiveType
         );
 
-        $crate::bench_tcurve_zk_attest_point_add_prover_time!(
-            $config,
-            zk_attest_point_add_creation,
-            $curve_name,
-            $OtherProjectiveType
-        );
-        $crate::bench_tcurve_zk_attest_point_add_verifier_time!(
-            $config,
-            zk_attest_point_add_verification,
-            $curve_name,
-            $OtherProjectiveType
-        );
-
         $crate::bench_tcurve_scalar_mul_prover_time!(
             $config,
             scalar_mul_creation,
@@ -1391,32 +872,6 @@ macro_rules! bench_tcurve_make_all {
             $OtherProjectiveType
         );
 
-        $crate::bench_tcurve_zk_attest_scalar_mul_prover_time!(
-            $config,
-            zk_attest_scalar_mul_creation,
-            $curve_name,
-            $OtherProjectiveType
-        );
-        $crate::bench_tcurve_zk_attest_scalar_mul_verifier_time!(
-            $config,
-            zk_attest_scalar_mul_verification,
-            $curve_name,
-            $OtherProjectiveType
-        );
-
-        $crate::bench_tcurve_fs_zk_attest_scalar_mul_prover_time!(
-            $config,
-            fs_zk_attest_scalar_mul_creation,
-            $curve_name,
-            $OtherProjectiveType
-        );
-        $crate::bench_tcurve_fs_zk_attest_scalar_mul_verifier_time!(
-            $config,
-            fs_zk_attest_scalar_mul_verification,
-            $curve_name,
-            $OtherProjectiveType
-        );
-
         $crate::bench_tcurve_ecdsa_prover_time!(
             $config,
             ecdsa_scalar_mul_creation_cdls,
@@ -1424,13 +879,7 @@ macro_rules! bench_tcurve_make_all {
             " cdls",
             CDLSCollective
         );
-        $crate::bench_tcurve_ecdsa_prover_time!(
-            $config,
-            ecdsa_scalar_mul_creation_zk,
-            $curve_name,
-            " zkattest",
-            ZKAttestCollective
-        );
+
         $crate::bench_tcurve_ecdsa_verifier_time!(
             $config,
             ecdsa_scalar_mul_verification_cdls,
@@ -1438,38 +887,16 @@ macro_rules! bench_tcurve_make_all {
             " cdls",
             CDLSCollective
         );
-        $crate::bench_tcurve_ecdsa_verifier_time!(
-            $config,
-            ecdsa_scalar_mul_verification_zk,
-            $curve_name,
-            " zkattest",
-            ZKAttestCollective
-        );
 
-        $crate::bench_tcurve_gk_zero_one_prover_time!($config, gk_zero_one_creation, $curve_name);
-        $crate::bench_tcurve_gk_zero_one_verifier_time!(
-            $config,
-            gk_zero_one_verification,
-            $curve_name
-        );
-
-        $crate::bench_zk_attest_fs_scalar_mul_prover_time_vary!(
-            $config,
-            fs_zk_attest_prover_time_v,
-            $curve_name,
-            $OtherProjectiveType
-        );
-        $crate::bench_zk_attest_fs_scalar_mul_verifier_time_vary!(
-            $config,
-            fs_zk_attest_verifier_time_v,
-            $curve_name,
-            $OtherProjectiveType
-        );
+        //$crate::bench_tcurve_gk_zero_one_prover_time!($config, gk_zero_one_creation, $curve_name);
+        //$crate::bench_tcurve_gk_zero_one_verifier_time!(
+        //    $config,
+        //    gk_zero_one_verification,
+        //    $curve_name
+        //);
 
         criterion_group!(
             benches,
-            fs_zk_attest_prover_time_v,
-            fs_zk_attest_verifier_time_v,
             open_proof_creation,
             open_proof_verification,
             equality_proof_creation,
@@ -1479,23 +906,15 @@ macro_rules! bench_tcurve_make_all {
             non_zero_proof_creation,
             non_zero_proof_verification,
             point_add_creation,
-            zk_attest_point_add_creation,
             point_add_verification,
-            zk_attest_point_add_verification,
             scalar_mul_creation,
-            zk_attest_scalar_mul_creation,
             scalar_mul_verification,
-            zk_attest_scalar_mul_verification,
             fs_scalar_mul_creation,
-            fs_zk_attest_scalar_mul_creation,
             fs_scalar_mul_verification,
-            fs_zk_attest_scalar_mul_verification,
             ecdsa_scalar_mul_creation_cdls,
-            ecdsa_scalar_mul_creation_zk,
             ecdsa_scalar_mul_verification_cdls,
-            ecdsa_scalar_mul_verification_zk,
-            gk_zero_one_creation,
-            gk_zero_one_verification,
+            //gk_zero_one_creation,
+            //gk_zero_one_verification,
         );
         criterion_main!(benches);
     };
